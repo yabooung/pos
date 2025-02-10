@@ -7,15 +7,7 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 export default function KakaoCallback() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const supabase = createClientComponentClient({
-    options: {
-      auth: {
-        autoRefreshToken: true,
-        persistSession: true,
-        detectSessionInUrl: false
-      }
-    }
-  });
+  const supabase = createClientComponentClient();
   
   useEffect(() => {
     const code = searchParams.get('code');
@@ -23,15 +15,12 @@ export default function KakaoCallback() {
       handleKakaoCallback(code);
     } else {
       console.error('인증 코드가 없습니다.');
-      router.push('/auth/test');
+      router.push('/');
     }
   }, [searchParams]);
 
   const handleKakaoCallback = async (code) => {
     try {
-      // 기존 세션이 있다면 로그아웃
-      await supabase.auth.signOut();
-
       const response = await fetch('/api/auth/kakao', {
         method: 'POST',
         headers: {
@@ -43,44 +32,39 @@ export default function KakaoCallback() {
         }),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || '카카오 로그인에 실패했습니다.');
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.error || '카카오 로그인에 실패했습니다.');
       }
 
-      const data = await response.json();
-      
-      if (data.success && data.session) {
-        // 세션 설정
-        const { data: authData, error: authError } = await supabase.auth.getSession();
+      if (data.session) {
+        // Supabase 세션 설정
+        const { error: sessionError } = await supabase.auth.setSession({
+          access_token: data.session.access_token,
+          refresh_token: data.session.refresh_token
+        });
+
+        if (sessionError) {
+          throw sessionError;
+        }
+
+        // 세션이 정상적으로 설정되었는지 확인
+        const { data: { user }, error: getUserError } = await supabase.auth.getUser();
         
-        if (authError) {
-          console.error('현재 세션 조회 에러:', authError);
+        if (getUserError || !user) {
+          throw new Error('사용자 세션 확인에 실패했습니다.');
         }
 
-        if (!authData?.session) {
-          const { error: setSessionError } = await supabase.auth.setSession({
-            access_token: data.session.access_token,
-            refresh_token: data.session.refresh_token
-          });
-
-          if (setSessionError) throw setSessionError;
-        }
-
-        // 세션 설정 확인
-        const { data: checkSession } = await supabase.auth.getSession();
-        if (checkSession?.session) {
-          router.push('/auth/test');
-        } else {
-          throw new Error('세션 설정에 실패했습니다.');
-        }
+        console.log('로그인 성공:', user);
+        router.push('/auth/test');
       } else {
-        throw new Error(data.error || '로그인에 실패했습니다.');
+        throw new Error('세션 정보가 없습니다.');
       }
     } catch (error) {
       console.error('카카오 콜백 에러:', error);
       alert(error.message);
-      router.push('/auth/test');
+      router.push('/');
     }
   };
 
