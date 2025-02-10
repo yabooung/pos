@@ -2,51 +2,69 @@
 
 import { useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
 export default function KakaoCallback() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const supabase = createClientComponentClient();
   
   useEffect(() => {
     const code = searchParams.get('code');
-    
     if (code) {
-      // 백엔드로 인증 코드 전송
-      handleKakaoLogin(code);
+      handleKakaoCallback(code);
+    } else {
+      console.error('인증 코드가 없습니다.');
+      router.push('/');
     }
   }, [searchParams]);
 
-  const handleKakaoLogin = async (code) => {
+  const handleKakaoCallback = async (code) => {
     try {
-      // 1. 백엔드에 인증 코드 전송
       const response = await fetch('/api/auth/kakao', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ code }),
+        body: JSON.stringify({ 
+          code,
+          redirectUri: `${window.location.origin}/oauth/kakao/callback`
+        }),
       });
-      
+
       const data = await response.json();
-      console.log('카카오 로그인 응답:', data); // 응답 확인용
-      
-      if (data.success) {
-        // access_token 저장
-        localStorage.setItem('kakao_access_token', data.user.access_token);
-        // 사용자 정보도 저장
-        localStorage.setItem('kakao_user', JSON.stringify(data.user));
+
+      if (!data.success) {
+        throw new Error(data.error || '카카오 로그인에 실패했습니다.');
+      }
+
+      if (data.session) {
+        // Supabase 세션 설정
+        const { error: sessionError } = await supabase.auth.setSession({
+          access_token: data.session.access_token,
+          refresh_token: data.session.refresh_token
+        });
+
+        if (sessionError) {
+          throw sessionError;
+        }
+
+        // 세션이 정상적으로 설정되었는지 확인
+        const { data: { user }, error: getUserError } = await supabase.auth.getUser();
         
-        // 상태 업데이트를 위해 새로고침
-        window.location.href = '/kakao';  // router.push() 대신 사용
+        if (getUserError || !user) {
+          throw new Error('사용자 세션 확인에 실패했습니다.');
+        }
+
+        console.log('로그인 성공:', user);
+        router.push('/auth/test');
       } else {
-        console.error('로그인 실패:', data.error);
-        alert('로그인에 실패했습니다.');
-        router.push('/kakao');
+        throw new Error('세션 정보가 없습니다.');
       }
     } catch (error) {
-      console.error('카카오 로그인 에러:', error);
-      alert('로그인 처리 중 오류가 발생했습니다.');
-      router.push('/kakao');
+      console.error('카카오 콜백 에러:', error);
+      alert(error.message);
+      router.push('/');
     }
   };
 
