@@ -1,16 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import crypto from 'crypto';
-import { cookies } from 'next/headers';
 import { randomBytes } from 'crypto';
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!supabaseUrl || !supabaseServiceKey) {
-  throw new Error('Missing Supabase environment variables');
-}
-
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 export async function POST(request) {
   try {
@@ -45,35 +34,49 @@ export async function POST(request) {
     });
 
     const userData = await userResponse.json();
-    console.log('카카오 사용자 정보:', userData);
 
     if (!userData.id) {
       throw new Error('카카오 사용자 정보를 받아오지 못했습니다.');
     }
 
-    // 5. 이메일 설정 (카카오 이메일이 없는 경우 대체 이메일 생성)
-    const email = userData.kakao_account?.email;
-    const userEmail = email || `kakao_${userData.id}@example.com`;
+    // 4. Supabase Admin 클라이언트 생성
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+        },
+      }
+    );
 
-    // 안전한 랜덤 비밀번호 생성 (32자)
-    const tempPassword = randomBytes(16).toString('hex');
+    // 5. 이메일 설정
+    const email = userData.kakao_account?.email || `kakao_${userData.id}@example.com`;
 
     // 6. 기존 사용자 확인
     const { data: { users }, error: getUserError } = await supabase.auth.admin.listUsers();
     if (getUserError) throw getUserError;
 
-    const existingUser = users.find(user => user.email === userEmail);
+    const existingUser = users.find(user => 
+      user.app_metadata?.provider === 'kakao' && 
+      user.user_metadata?.kakao_id === userData.id.toString()
+    );
+
     let userId;
 
+    // 7. 임시 비밀번호 생성 (매 로그인마다 새로 생성)
+    const tempPassword = randomBytes(16).toString('hex');
+
     if (!existingUser) {
-      // 7. 새 사용자 생성
+      // 8. 새 사용자 생성
       const { data: { user }, error: createUserError } = await supabase.auth.admin.createUser({
-        email: userEmail,
+        email: email,
         password: tempPassword,
         email_confirm: true,
         user_metadata: {
           provider: 'kakao',
-          kakao_id: userData.id,
+          kakao_id: userData.id.toString(),
           nickname: userData.properties?.nickname,
           profile_image: userData.properties?.profile_image,
         },
@@ -86,27 +89,26 @@ export async function POST(request) {
       if (createUserError) throw createUserError;
       userId = user.id;
 
-      // 8. 프로필 생성
+      // 9. 프로필 생성
       const { error: createProfileError } = await supabase
         .from('profiles')
         .insert({
           id: userId,
-          kakao_id: userData.id,
-          email: userEmail,
+          kakao_id: userData.id.toString(),
+          email: email,
           nickname: userData.properties?.nickname,
           profile_image: userData.properties?.profile_image,
-          name: userData.properties?.nickname,
+          name: userData.kakao_account?.name,
+          birthday: userData.kakao_account?.birthday,
+          birthday_type: userData.kakao_account?.birthday_type,
           provider: 'kakao'
         });
 
       if (createProfileError) throw createProfileError;
-
-      // 이메일 확인 처리
-      await supabase.rpc('confirm_user', { user_id: userId });
     } else {
       userId = existingUser.id;
       
-      // 기존 사용자 메타데이터 업데이트
+      // 10. 기존 사용자 비밀번호 업데이트
       const { error: updateError } = await supabase.auth.admin.updateUserById(
         userId,
         {
@@ -114,7 +116,7 @@ export async function POST(request) {
           email_confirm: true,
           user_metadata: {
             provider: 'kakao',
-            kakao_id: userData.id,
+            kakao_id: userData.id.toString(),
             nickname: userData.properties?.nickname,
             profile_image: userData.properties?.profile_image,
           },
@@ -126,11 +128,29 @@ export async function POST(request) {
       );
 
       if (updateError) throw updateError;
+
+      // 11. 프로필 업데이트
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .upsert({
+          id: userId,
+          kakao_id: userData.id.toString(),
+          email: email,
+          nickname: userData.properties?.nickname,
+          profile_image: userData.properties?.profile_image,
+          name: userData.kakao_account?.name,
+          birthday: userData.kakao_account?.birthday,
+          birthday_type: userData.kakao_account?.birthday_type,
+          provider: 'kakao',
+          updated_at: new Date().toISOString()
+        });
+
+      if (profileError) throw profileError;
     }
 
-    // 9. 생성된 비밀번호로 로그인
-    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-      email: userEmail,
+    // 12. 임시 비밀번호로 로그인
+    const { data: { session }, error: signInError } = await supabase.auth.signInWithPassword({
+      email: email,
       password: tempPassword,
     });
 
@@ -138,10 +158,10 @@ export async function POST(request) {
 
     return Response.json({
       success: true,
-      session: signInData.session,
+      session,
       user: {
         id: userId,
-        email: userEmail,
+        email: email,
         nickname: userData.properties?.nickname
       }
     });

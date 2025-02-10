@@ -41,7 +41,9 @@ export default function AuthTest() {
   const handleKakaoLogin = () => {
     const KAKAO_CLIENT_ID = process.env.NEXT_PUBLIC_KAKAO_CLIENT_ID;
     const REDIRECT_URI = `${window.location.origin}/oauth/kakao/callback`;
-    const kakaoURL = `https://kauth.kakao.com/oauth/authorize?client_id=${KAKAO_CLIENT_ID}&redirect_uri=${REDIRECT_URI}&response_type=code`;
+    const SCOPE = encodeURIComponent('profile_nickname profile_image name birthday');
+    
+    const kakaoURL = `https://kauth.kakao.com/oauth/authorize?client_id=${KAKAO_CLIENT_ID}&redirect_uri=${REDIRECT_URI}&response_type=code&scope=${SCOPE}`;
     window.location.href = kakaoURL;
   };
 
@@ -90,6 +92,16 @@ export default function AuthTest() {
                 <p className="text-sm text-gray-600">
                   Provider: {profile?.provider || 'Unknown'}
                 </p>
+                {profile?.name && (
+                  <p className="text-sm text-gray-600">
+                    Name: {profile.name}
+                  </p>
+                )}
+                {profile?.birthday && (
+                  <p className="text-sm text-gray-600">
+                    Birthday: {profile.birthday}
+                  </p>
+                )}
                 {profile?.kakao_id && (
                   <p className="text-sm text-gray-600">
                     Kakao ID: {profile.kakao_id}

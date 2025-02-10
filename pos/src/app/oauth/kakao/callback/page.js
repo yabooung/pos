@@ -39,24 +39,8 @@ export default function KakaoCallback() {
       }
 
       if (data.session) {
-        // Supabase 세션 설정
-        const { error: sessionError } = await supabase.auth.setSession({
-          access_token: data.session.access_token,
-          refresh_token: data.session.refresh_token
-        });
-
-        if (sessionError) {
-          throw sessionError;
-        }
-
-        // 세션이 정상적으로 설정되었는지 확인
-        const { data: { user }, error: getUserError } = await supabase.auth.getUser();
-        
-        if (getUserError || !user) {
-          throw new Error('사용자 세션 확인에 실패했습니다.');
-        }
-
-        console.log('로그인 성공:', user);
+        // 세션 설정
+        await supabase.auth.setSession(data.session);
         router.push('/auth/test');
       } else {
         throw new Error('세션 정보가 없습니다.');
