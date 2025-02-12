@@ -41,7 +41,7 @@ export default function KakaoCallback() {
       if (data.session) {
         // 세션 설정
         await supabase.auth.setSession(data.session);
-        router.push('/auth/test');
+        router.push('/profile');
       } else {
         throw new Error('세션 정보가 없습니다.');
       }
