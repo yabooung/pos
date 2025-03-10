@@ -3,20 +3,20 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import ProfileHeader from '@/components/profile/ProfileHeader';
-import ProfileInfo from '@/components/profile/ProfileInfo';
-import PlayerStats from '@/components/profile/PlayerStats';
-import PlayerList from '@/components/profile/PlayerList';
-import MatchList from '@/components/profile/MatchList';
+import { useSearchParams } from 'next/navigation';
+import ProfileHeader from '../../components/profile/ProfileHeader';
+import PlayerInfo from '../../components/profile/PlayerInfo';
+import PlayerStats from '../../components/profile/PlayerStats';
+import MatchList from '../../components/profile/MatchList';
 
 export default function Profile() {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
-  const router = useRouter();
-  const supabase = createClientComponentClient();
-
   const [activeTab, setActiveTab] = useState('stats');
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const supabase = createClientComponentClient();
 
   useEffect(() => {
     checkUser();
@@ -50,16 +50,6 @@ export default function Profile() {
     }
   };
 
-  const handleLogout = async () => {
-    try {
-      await supabase.auth.signOut();
-      router.push('/login');
-    } catch (error) {
-      console.error('로그아웃 에러:', error);
-      alert('로그아웃 중 오류가 발생했습니다.');
-    }
-  };
-
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -72,17 +62,12 @@ export default function Profile() {
     <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-3xl mx-auto">
         <div className="bg-white shadow rounded-lg overflow-hidden">
-          <ProfileHeader 
-            profile={profile} 
-            user={user} 
-            onLogout={handleLogout} 
-          />
-          <ProfileInfo profile={profile} user={user} />
+          <ProfileHeader profile={profile} />
+          <PlayerInfo profile={profile} />
           
-          {/* 탭 네비게이션 */}
           <div className="border-t mt-6">
             <div className="flex border-b">
-              {['stats', 'players', 'matches'].map((tab) => (
+              {['stats', 'matches'].map((tab) => (
                 <button
                   key={tab}
                   className={`px-6 py-3 text-sm font-medium ${
@@ -92,17 +77,14 @@ export default function Profile() {
                   }`}
                   onClick={() => setActiveTab(tab)}
                 >
-                  {tab === 'stats' && '선수 스탯'}
-                  {tab === 'players' && '선수 목록'}
-                  {tab === 'matches' && '경기 목록'}
+                  {tab === 'stats' && '통계'}
+                  {tab === 'matches' && '경기 기록'}
                 </button>
               ))}
             </div>
 
-            {/* 탭 컨텐츠 */}
             <div className="p-6">
               {activeTab === 'stats' && <PlayerStats userId={user.id} />}
-              {activeTab === 'players' && <PlayerList userId={user.id} />}
               {activeTab === 'matches' && <MatchList userId={user.id} />}
             </div>
           </div>
